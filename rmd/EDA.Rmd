@@ -1,0 +1,38 @@
+---
+title: "EDA"
+author: "Vayun Malik"
+date: "2023-07-26"
+output: html_document
+---
+```{r title and department}
+library(readr)
+EDA_Dataset <- read_csv("~/Wharton DSA/Final Project/EDA_Dataset.csv")
+head(EDA_Dataset)
+title_table <- table(EDA_Dataset$title)
+title_table
+barplot(title_table)
+department_table <- table(EDA_Dataset$department)
+department_table
+barplot(department_table)
+```
+Title is a categorical variable that just says what job the person who got scammed by the malicious targeting.
+
+Department is also a categorical variable that says what department the person who got scammed worked in.
+
+```{r salary}
+min_sal = c()
+max_sal = c()
+for (index in 1:nrow(EDA_Dataset)) {
+  temp <-  strsplit(EDA_Dataset$salary_range[index], split = "-")
+  min_sal <- append(min_sal, temp[[1]][1])
+  max_sal <- append(max_sal, temp[[1]][2])
+}
+EDA_Dataset$min_sal = as.numeric(min_sal)
+EDA_Dataset$max_sal = as.numeric(max_sal)
+hist(EDA_Dataset$min_sal, col = "blue",  main = "Minimum Salary", xlab = "Salary", breaks = 30)
+hist(EDA_Dataset$max_sal, col = "blue",  main = "Maximum Salary", xlab = "Salary", breaks = 30)
+mean(EDA_Dataset$min_sal, na.rm = TRUE)
+mean(EDA_Dataset$max_sal, na.rm = TRUE)
+fivenum(EDA_Dataset$min_sal, na.rm = TRUE)
+fivenum(EDA_Dataset$max_sal, na.rm = TRUE)
+```
