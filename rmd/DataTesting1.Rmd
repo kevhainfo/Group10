@@ -1,0 +1,49 @@
+---
+title: "DataTesting1"
+author: "Kenneth Ren"
+date: "2023-07-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, fig.width=8, fig.height=4)
+options(scipen = 999, digits = 5)  # controls base R output
+
+# Package setup
+if(!require("pacman")) install.packages("pacman")
+
+pacman::p_load(ISLR, readxl, magrittr, leaps, contrast, car, tidyverse, dplyr, ggplot2, data.table, lubridate, 
+               glmnet, kableExtra, stargazer, scales, viridis, knitr, readr, usmap)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r data_reading}
+
+test_data <- read_csv("data/balanced_dataset_testing.csv")
+#str(test_data)
+
+```
+
+
+```{r EDA 1}
+table(test_data$employment_type, useNA = "ifany")
+table(test_data$required_education, useNA = "ifany")
+table(test_data$required_experience, useNA = "ifany")
+```
+
+```{r}
+test_data$required_experience[is.na(test_data$required_experience)] <- "Not Applicable"
+test_data$required_education[is.na(test_data$required_education)] <- "Unspecified"
+test_data$employment_type[is.na(test_data$employment_type)] <- "Unspecified"
+```
+
+```{r}
+#test_data[which(test_data$has_company_logo == TRUE & test_data$fraudulent == TRUE),]
+write.csv(test_data, "data/balanced_dataset_testing_KennethRevised.csv")
+```
+
