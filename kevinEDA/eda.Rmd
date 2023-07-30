@@ -5,7 +5,7 @@ date: "2023-07-30"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = T, fig.width=8, fig.height=4)
+knitr::opts_chunk$set(echo = T, fig.width=21, fig.height=4)
 options(scipen = 999, digits = 3)  # controls base R output
 
 # Package setup
@@ -22,9 +22,17 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ```{r cars}
-data <- fread("data/DataSet.csv")
-data1 = subset(data, select = c(company_profile, description,requirements,benefits))
+data1 <- fread("data/df_Kenneth_Kevin.csv")
 head(data1)
+dim(data1)
+```
+
+
+```{r cars}
+dim(data1)
+data1$fraudulent[data$fraudulent == "t"] <- 1  
+data1$fraudulent[data$fraudulent == "f"] <- 0
+data1$fraudulent
 ```
 
 ## Including Plots
@@ -32,7 +40,47 @@ head(data1)
 You can also embed plots, for example:
 
 ```{r pressure, echo=FALSE}
-plot(pressure)
+library(stringr)
+data1$dLength <- str_count(data1$description)
+data1$dLength
+data1$pLength <- str_count(data1$company_profile)
+data1$rLength <- str_count(data1$requirements)
+data1$bLength <- str_count(data1$benefits)
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r, results=TRUE}
+data1 %>% mutate(fraudulent = as.numeric(fraudulent)) %>%
+ggplot(aes(x=dLength, y=fraudulent)) +
+geom_jitter(height = .05, aes(color = factor(fraudulent)))
+
+data1 %>% mutate(fraudulent = as.numeric(fraudulent)) %>%
+ggplot(aes(x=pLength, y=fraudulent)) +
+geom_jitter(height = .05, aes(color = factor(fraudulent)))
+
+data1 %>% mutate(fraudulent = as.numeric(fraudulent)) %>%
+ggplot(aes(x=rLength, y=fraudulent)) +
+geom_jitter(height = .05, aes(color = factor(fraudulent)))
+
+data1 %>% mutate(fraudulent = as.numeric(fraudulent)) %>%
+ggplot(aes(x=bLength, y=fraudulent)) +
+geom_jitter(height = .05, aes(color = factor(fraudulent)))
+```
+```{r}
+fit1 <- glm(as.numeric(fraudulent)~dLength+pLength+rLength+bLength, data1, family=binomial(logit)) 
+Anova(fit1)
+fit2 <- glm(as.numeric(fraudulent)~dLength+pLength+rLength, data1, family=binomial(logit)) 
+Anova(fit2)
+summary(fit2)
+```
+```{r}
+final_data = subset(data1, select = -c(bLength) )
+dim(final_data)
+write.csv(final_data, "EDA_w_length.csv", row.names=FALSE)
+```
+```{r}
+data1 %>%
+ggplot(aes(x=dLength, y=LSTM_Index)) +
+geom_jitter(height = .05, aes(color = factor(fraudulent)))
+```
+
