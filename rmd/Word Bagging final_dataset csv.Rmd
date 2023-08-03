@@ -1,0 +1,412 @@
+---
+title: "Word Bagging final_dataset.csv"
+author: "Kenneth Ren"
+date: "2023-08-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.height=4, fig.width=6, warning = F)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(randomForest, tree, ISLR, rpart, rattle, pROC, partykit, ggplot2, glmnet, leaps, dplyr, keras, neuralnet, imager, ranger, tidyverse, RColorBrewer, wordcloud, tm, AICcmodavg, broom, ggpubr)
+```
+
+## R Markdown
+
+
+```{r}
+email_data <- read.csv("data/final_dataset.csv")
+#email_data %>%  mutate(across(everything(), ~gsub("[[:punct:]]", "", .x)))
+#remove Â
+email_data$description <- iconv(email_data$description, "latin1", "ASCII", sub=" ")
+email_data$description <- gsub("<.*?>", " ", email_data$description)
+email_data$requirements <- iconv(email_data$requirements, "latin1", "ASCII", sub=" ")
+email_data$requirements <- gsub("<.*?>", " ", email_data$requirements)
+email_data$requirements <- gsub("&amp;", "&", email_data$requirements)
+email_data$benefits <- iconv(email_data$benefits, "latin1", "ASCII", sub=" ")
+email_data$benefits <- gsub("<.*?>", " ", email_data$benefits)
+email_data$benefits <- gsub("&amp;", "&", email_data$benefits)
+table(email_data$employment_type)
+
+#gsub("<.*?>", " ", "<p>Administrative Assistant<br><br>Essential Job Responsibilities:<br><br>Answering and routing telephone calls to appropriate people<br>Scheduling appointments<br>Maintain paper and electronic filing systems for records and messages<br>Limited courier responsibilities<br>Perform any additional duties as assigned or requested<br><br>Required Qualifications:<br><br>At least two years of experience and knowledge to perform essential job functions assigned<br>Able to work in a fast-pace environment and be able to multi-task<br>Excellent communication skills and computer knowledge (QuickBooks a plus)<br>Well organized, highly dependable, and efficient<br>Must have problem solving skills and be detailed oriented<br>Maintain respect at all times for confidential information<br><br>Starting pay $25/Hr<br>Benefits:<br><br>401K Plan with company matching<br>Medical, Dental, Vision coverage<br>Vacation Pay<br>Disability insurance<br>Long-term care insurance<br>Growth Opportunities</p>")
+```
+
+## Description Column
+
+```{r dtm_for_description}
+library(tm)
+text_corpus <- VCorpus(VectorSource(email_data$description))
+
+text_corpus <- tm_map(text_corpus, content_transformer(tolower))
+text_corpus <- tm_map(text_corpus, removePunctuation)
+text_corpus <- tm_map(text_corpus, removeNumbers)
+text_corpus <- tm_map(text_corpus, removeWords, stopwords("english"))
+text_corpus <- tm_map(text_corpus, stemDocument, lazy = TRUE)
+# 
+dtm_description <- DocumentTermMatrix(text_corpus)
+dtm_description <- removeSparseTerms(dtm_description, 1-0.05)
+class(dtm_description)
+inspect(dtm_description)
+dim(as.matrix(dtm_description))
+```
+99\% sparsity
+
+```{r}
+dfdtm_description <- as.data.frame(as.matrix(dtm_description), stringsAsFactors=False)
+dfdtm_description$fraudulent = email_data$fraudulent
+```
+
+We have 450 training samples, 250 testing samples, and 200 validation samples.
+```{r}
+N <- nrow(dfdtm_description)
+index_train <- sample(N, 450)
+data_description.train <- dfdtm_description[index_train,]
+index_no_train <- (which(! seq(1:N) %in% index_train))
+index_test <- sample(index_no_train, 250)
+data_description.test <- dfdtm_description[index_test,]
+index_val <- which(! index_no_train %in% index_test)
+data_description.val <- dfdtm_description[index_val,]
+
+```
+
+Beginning LASSO
+```{r}
+y <- data_description.train$fraudulent
+X1 <- model.matrix(fraudulent~., data = data_description.train)[,-1]
+#description_result.lasso <- cv.glmnet(X1, y, alpha = 0.99, family = "binomial")
+description_result.lasso <- readRDS("RDS_Saves/DescriptionLASSOv5.RDS")
+#plot(description_result.lasso)
+#saveRDS(description_result.lasso, file = "RDS_Saves/DescriptionLASSOv5.RDS")
+#summary(description_result.lasso)
+
+description_coef.1se <- coef(description_result.lasso, s = "lambda.min")
+description_coef.1se <- description_coef.1se[which(description_coef.1se != 0),]
+lasso.words.description <- rownames(as.matrix(description_coef.1se))[-1]
+#lasso.words <- coef.1se@Dimnames[[1]] [coef.1se@i][-1]
+#summary(lasso.words.description)
+length(description_coef.1se)
+description_coef.1se
+  
+
+```
+
+```{r word cloud description for scams}
+description_good.glm <- description_coef.1se[which(description_coef.1se > 0)]
+description_good.glm <- description_good.glm[-1]  # take intercept out
+names(description_good.glm)[1:2]  # which words are positively associated with good ratings
+#good.glm
+description_good.fre <- sort(description_good.glm, decreasing = TRUE) # sort the coef's
+#description_good.fre
+length(description_good.fre)
+# hist(as.matrix(good.fre), breaks=30, col="red") 
+description_good.word <- names(description_good.fre)  # good words with a decreasing order in the coeff's
+
+
+cor.special <- brewer.pal(8,"Dark2")  # set up a pretty color scheme
+wordcloud(names(description_good.glm), description_good.glm,  # make a word cloud
+          colors=cor.special, ordered.colors=F, scale = c(5, 0.05))
+```
+
+```{r word cloud description for reals}
+description_good.glm <- description_coef.1se[which(description_coef.1se < 0)]
+description_good.glm <- description_good.glm[-1]  # take intercept out
+names(description_good.glm)[1:2]  # which words are positively associated with good ratings
+#good.glm
+description_good.fre <- sort(description_good.glm, decreasing = TRUE) # sort the coef's
+description_good.fre
+round(description_good.fre, 4)[1:2]
+length(description_good.fre)
+# hist(as.matrix(good.fre), breaks=30, col="red") 
+description_good.word <- names(description_good.fre)  # good words with a decreasing order in the coeff's
+
+
+cor.special <- brewer.pal(8,"Dark2")  # set up a pretty color scheme
+wordcloud(names(description_good.glm), description_good.glm * -1,  # make a word cloud
+          colors=cor.special, ordered.colors=F, scale = c(5, 0.05))
+```
+
+## Requirements Column
+
+```{r dtm_for_requirements}
+library(tm)
+
+
+
+text_corpus <- VCorpus(VectorSource(email_data$requirements))
+
+text_corpus <- tm_map(text_corpus, content_transformer(tolower))
+text_corpus <- tm_map(text_corpus, removePunctuation)
+text_corpus <- tm_map(text_corpus, removeNumbers)
+text_corpus <- tm_map(text_corpus, removeWords, stopwords("english"))
+text_corpus <- tm_map(text_corpus, stemDocument, lazy = TRUE)
+
+# 
+dtm_requirements <- DocumentTermMatrix(text_corpus)
+dtm_requirements <- removeSparseTerms(dtm_requirements, 1-0.05)
+class(dtm_requirements)
+inspect(dtm_requirements)
+dim(as.matrix(dtm_requirements))
+```
+
+
+```{r}
+dfdtm_requirements <- as.data.frame(as.matrix(dtm_requirements), stringsAsFactors=False)
+dfdtm_requirements$fraudulent = email_data$fraudulent
+```
+
+We have 450 training samples, 250 testing samples, and 200 validation samples.
+```{r}
+N <- nrow(dfdtm_requirements)
+index_train <- sample(N, 450)
+data_requirements.train <- dfdtm_requirements[index_train,]
+index_no_train <- (which(! seq(1:N) %in% index_train))
+index_test <- sample(index_no_train, 250)
+data_requirements.test <- dfdtm_requirements[index_test,]
+index_val <- which(! index_no_train %in% index_test)
+data_requirements.val <- dfdtm_requirements[index_val,]
+
+```
+
+Beginning LASSO
+```{r}
+colnames(data_requirements.train)[which('a' %in% colnames(data_requirements.train))]
+y <- data_requirements.train$fraudulent
+seedReq1 <- .Random.seed
+X1 <- model.matrix(fraudulent~., data = data_requirements.train)[,-1]
+seedReq2 <- .Random.seed
+#requirements_result.lasso <- cv.glmnet(X1, y, alpha = 0.99, family = "binomial")
+requirements_result.lasso <- readRDS("RDS_Saves/RequirementsLASSOv5.RDS")
+plot(requirements_result.lasso)
+#saveRDS(requirements_result.lasso, file = "RDS_Saves/RequirementsLASSOv5.RDS")
+summary(requirements_result.lasso)
+
+requirements_coef.1se <- coef(requirements_result.lasso, s = "lambda.min")
+requirements_coef.1se <- requirements_coef.1se[which(requirements_coef.1se != 0),]
+lasso.words.requirements <- rownames(as.matrix(requirements_coef.1se))[-1]
+#lasso.words <- coef.1se@Dimnames[[1]] [coef.1se@i][-1]
+summary(lasso.words.requirements)
+requirements_coef.1se
+
+# failed <- "LLL"
+# for(i in 1:300) {
+#   y <- data_requirements.train$fraudulent
+#   #seedReq1 <- .Random.seed
+#   X1 <- model.matrix(fraudulent~., data = data_requirements.train)[,-1]
+#   #seedReq2 <- .Random.seed
+#   requirements_result.lasso <- cv.glmnet(X1, y, alpha = 0.99, family = "binomial")
+#   #plot(requirements_result.lasso)
+#   #saveRDS(requirements_result.lasso, file = "RDS_Saves/RequirementsLASSOv3.RDS")
+#   #summary(requirements_result.lasso)
+#   
+#   requirements_coef.1se <- coef(requirements_result.lasso, s = "lambda.min")
+#   requirements_coef.1se <- requirements_coef.1se[which(requirements_coef.1se != 0),]
+#   
+#   lasso.words.requirements <- rownames(as.matrix(requirements_coef.1se))[-1]
+#   #lasso.words <- coef.1se@Dimnames[[1]] [coef.1se@i][-1]
+#   #summary(lasso.words.requirements)
+#   if (length(requirements_coef.1se) > 12) {
+#     failed <- "win"
+#     break
+#     lasso_max_length <- length(requirements_coef.1se)
+#     good_result.lasso <- requirements_result.lasso
+#   }
+#   requirements_coef.1se
+#   
+# }
+# failed
+# length(requirements_coef.1se)
+# requirements_coef.1se
+# #saveRDS(requirements_result.lasso, file = "RDS_Saves/RequirementsLASSOv4.RDS")
+```
+
+```{r}
+
+```
+No linear combination of any of the words in requirements are useful for predicting a regression.
+
+```{r word cloud requirements for scams}
+requirements_good.glm <- requirements_coef.1se[which(requirements_coef.1se > 0)]
+requirements_good.glm <- requirements_good.glm[-1]  # take intercept out
+names(requirements_good.glm)[1:2]  # which words are positively associated with good ratings
+#good.glm
+requirements_good.fre <- sort(requirements_good.glm, decreasing = TRUE) # sort the coef's
+requirements_good.fre
+round(requirements_good.fre, 4)[1:2]
+length(requirements_good.fre)
+# hist(as.matrix(good.fre), breaks=30, col="red") 
+requirements_good.word <- names(requirements_good.fre)  # good words with a decreasing order in the coeff's
+
+
+cor.special <- brewer.pal(8,"Dark2")  # set up a pretty color scheme
+wordcloud(names(requirements_good.glm), requirements_good.glm,  # make a word cloud
+          colors=cor.special, ordered.colors=F, scale = c(5, 0.05))
+```
+
+```{r word cloud requirements for reals}
+requirements_good.glm <- requirements_coef.1se[which(requirements_coef.1se < 0)]
+requirements_good.glm <- requirements_good.glm[-1]  # take intercept out
+names(requirements_good.glm)[1:2]  # which words are positively associated with good ratings
+#good.glm
+requirements_good.fre <- sort(requirements_good.glm, decreasing = TRUE) # sort the coef's
+requirements_good.fre
+round(requirements_good.fre, 4)[1:2]
+length(requirements_good.fre)
+# hist(as.matrix(good.fre), breaks=30, col="red") 
+requirements_good.word <- names(requirements_good.glm)  # good words with a decreasing order in the coeff's
+
+
+cor.special <- brewer.pal(8,"Dark2")  # set up a pretty color scheme
+wordcloud(names(requirements_good.glm), requirements_good.glm * -1,  # make a word cloud
+          colors=cor.special, ordered.colors=F, scale = c(5, 0.04))
+```
+
+## Benefits Column
+```{r dtm_for_benefits}
+library(tm)
+
+
+
+text_corpus <- VCorpus(VectorSource(email_data$benefits))
+
+text_corpus <- tm_map(text_corpus, content_transformer(tolower))
+text_corpus <- tm_map(text_corpus, removePunctuation)
+text_corpus <- tm_map(text_corpus, removeNumbers)
+text_corpus <- tm_map(text_corpus, removeWords, stopwords("english"))
+text_corpus <- tm_map(text_corpus, stemDocument, lazy = TRUE)
+
+# 
+dtm_benefits <- DocumentTermMatrix(text_corpus)
+dtm_benefits <- removeSparseTerms(dtm_benefits, 1-0.05)
+class(dtm_benefits)
+inspect(dtm_benefits)
+dim(as.matrix(dtm_benefits))
+
+dfdtm_benefits <- as.data.frame(as.matrix(dtm_benefits), stringsAsFactors=False)
+dfdtm_benefits$fraudulent = email_data$fraudulent
+```
+
+We have 450 training samples, 250 testing samples, and 200 validation samples.
+```{r}
+N <- nrow(dfdtm_benefits)
+index_train <- sample(N, 450)
+data_benefits.train <- dfdtm_benefits[index_train,]
+index_no_train <- (which(! seq(1:N) %in% index_train))
+index_test <- sample(index_no_train, 250)
+data_benefits.test <- dfdtm_benefits[index_test,]
+index_val <- which(! index_no_train %in% index_test)
+data_benefits.val <- dfdtm_benefits[index_val,]
+```
+
+```{r}
+colnames(data_benefits.train)[which('a' %in% colnames(data_benefits.train))]
+y <- data_benefits.train$fraudulent
+seedReq1 <- .Random.seed
+X1 <- model.matrix(fraudulent~., data = data_benefits.train)[,-1]
+seedReq2 <- .Random.seed
+#benefits_result.lasso <- cv.glmnet(X1, y, alpha = 0.99, family = "binomial")
+benefits_result.lasso <- readRDS("RDS_Saves/BenefitsLASSOv2.RDS")
+#plot(benefits_result.lasso)
+#saveRDS(benefits_result.lasso, file = "RDS_Saves/BenefitsLASSOv3.RDS")
+#summary(benefits_result.lasso)
+
+benefits_coef.1se <- coef(benefits_result.lasso, s = "lambda.min")
+benefits_coef.1se <- benefits_coef.1se[which(benefits_coef.1se != 0),]
+lasso.words.benefits <- rownames(as.matrix(benefits_coef.1se))[-1]
+#lasso.words <- coef.1se@Dimnames[[1]] [coef.1se@i][-1]
+#summary(lasso.words.benefits)
+benefits_coef.1se <- benefits_coef.1se[-1]
+benefits_coef.1se
+length(benefits_coef.1se)
+```
+
+```{r word cloud benefits for scams}
+benefits_scam.glm <- benefits_coef.1se[which(benefits_coef.1se > 0)]
+#benefits_scam.glm <- benefits_scam.glm[-1]  # take intercept out
+names(benefits_scam.glm)[1:2]  # which words are positively associated with good ratings
+#good.glm
+#benefits_scam.fre <- sort(benefits_scam.glm, decreasing = TRUE) # sort the coef's
+#benefits_scam.fre
+round(benefits_scam.fre, 4)[1:2]
+length(benefits_scam.fre)
+# hist(as.matrix(good.fre), breaks=30, col="red") 
+benefits_scam.word <- names(benefits_scam.fre)  # good words with a decreasing order in the coeff's
+
+
+cor.special <- brewer.pal(8,"Dark2")  # set up a pretty color scheme
+wordcloud(names(benefits_scam.glm), benefits_scam.glm,  # make a word cloud
+          colors=cor.special, ordered.colors=F)
+```
+
+```{r word cloud benefits for reals}
+benefits_reals.glm <- benefits_coef.1se[which(benefits_coef.1se < 0)]
+#benefits_reals.glm <- benefits_reals.glm[-1]  # take intercept out
+# names(benefits_reals.glm)[1:2]  # which words are positively associated with good ratings
+#good.glm
+# benefits_reals.fre <- sort(benefits_reals.glm, decreasing = TRUE) # sort the coef's
+# benefits_reals.fre
+# round(benefits_reals.fre, 4)[1:2]
+# length(benefits_reals.fre)
+# hist(as.matrix(good.fre), breaks=30, col="red") 
+benefits_reals.word <- names(benefits_reals.fre)  # good words with a decreasing order in the coeff's
+
+
+cor.special <- brewer.pal(8,"Dark2")  # set up a pretty color scheme
+wordcloud(names(benefits_reals.glm), benefits_reals.glm * -1,  # make a word cloud
+          colors=cor.special, ordered.colors=F)
+```
+
+```{r logistic model benefits}
+wordfit <- glm(fraudulent ~ bonus + dental + employe + free + insur + offer + offic + time + vacat + year, dfdtm_benefits, family = "binomial") #0.436
+#wordfit <- glm(fraudulent ~ great + competit + insur + free + earn + complet, dfdtm_benefits, family = "binomial")
+#wordfit <- glm(fraudulent ~ abl + desir + level + person + role + skill + team + valid + will + word, dfdtm_benefits, family = "binomial")
+# 0.464
+summary(wordfit)
+
+fit.fitted.test <- predict(wordfit, data_benefits.test, type="response")
+fit.test.pred <- ifelse(fit.fitted.test > 1/2, "1", "0")
+error.testing.fit.final <- mean(fit.test.pred != data_benefits.test$fraudulent)
+error.testing.fit.final
+```
+
+```{r}
+#abl        engin       inform        level       person   profession         sale       scienc         will
+wordfit <- glm(fraudulent ~ abl + engin + inform + level + person + profession + sale + scienc + will, dfdtm_requirements, family = "binomial")
+summary(wordfit)
+fit.fitted.test <- predict(wordfit, data_requirements.test, type="response")
+fit.test.pred <- ifelse(fit.fitted.test > 1/2, "1", "0")
+error.testing.fit.final <- mean(fit.test.pred != data_requirements.test$fraudulent)
+error.testing.fit.final
+```
+
+```{r}
+# account       assist         best          can       comput         data       execut        field       financ 
+#  0.206235254  0.078281196  0.009441806  0.160341135 -0.102909440 -0.003536444 -0.061876193  0.049460385 -0.047578369  0.158636867 
+#      general        group         hire         home     industri        locat        mobil         must      network        place 
+#  0.021251793  0.056733971 -0.009749587 -0.030149278  0.053509617 -0.039454112 -0.016741370  0.044819900 -0.350850672 -0.025475407 
+#       prefer      project       promot       record       requir       salari       senior          set         site        small 
+# -0.314862818 -0.042763559  0.102033348  0.001565125 -0.083164888 -0.208952082 -0.215816341  0.220988151 -0.180034215  0.045932001 
+#      softwar    temporari         test         type        visit        youll
+
+#wordfit <- glm(fraudulent ~ account + assist + best + can + comput + data + execut + field + financ + general + group + hire + home + industri + locat + mobil + must + network + place + prefer + project + promot + record + requir + salari + senior + set + site + small + softwar + temporari + test + type + visit, dfdtm_description, family = "binomial")
+
+# achiev       appli      execut        fast        good    interest        join      prefer         set   temporari 
+# -0.12080281  0.05484175 -0.09285484  0.10447607 -0.06145582 -0.21126359 -0.01999453 -0.09292082 -0.03574468  0.11974122  0.32631801 
+#        year
+# achiev        appli       assist       execut         fast         good     interest         join       prefer 
+# -0.109167312  0.114273469 -0.120645805  0.008522469  0.125275623 -0.099728956 -0.241977515 -0.061402822 -0.112101450 -0.059423656 
+#          set        small    temporari         tool         year 
+
+
+
+#wordfit <- glm(fraudulent ~ account + assist + best + can + comput + data + execut + field + hire + industri + locat + mobil + must + network + prefer + project + record + salari + senior + set + softwar + temporari + test + visit, dfdtm_description, family = "binomial")
+
+#wordfit <- glm(fraudulent ~ achiev + appli + assist + execut + fast + good + interest + join + prefer + set + temporari + tool +year, dfdtm_description, family = "binomial")
+wordfit <- glm(fraudulent ~ achiev + appli + assist + execut + fast + good + join + prefer + set + temporari + tool, dfdtm_description, family = "binomial")
+summary(wordfit)
+fit.fitted.test <- predict(wordfit, data_description.test, type="response")
+fit.test.pred <- ifelse(fit.fitted.test > 1/2, "1", "0")
+error.testing.fit.final <- mean(fit.test.pred != data_description.test$fraudulent)
+error.testing.fit.final
+```
+
+
