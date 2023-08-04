@@ -5,6 +5,6 @@ Group 10 DSA Academy Work
 <br>
 -3 EDA graphics (for each person, totals to 15) - we’ll delegate specifics
 
-(Kaggle Dataset Link)[https://www.kaggle.com/datasets/amruthjithrajvr/recruitment-scam]
+[Kaggle Dataset Link](https://www.kaggle.com/datasets/amruthjithrajvr/recruitment-scam)
 
 DO EDA ON EDA_DATASET.CSV
